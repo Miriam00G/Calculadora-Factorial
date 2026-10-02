@@ -1,0 +1,169 @@
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Calculadora de Factoriales y Combinaciones</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="{% static 'factoriales/style.css' %}">
+<style>
+.grafico{margin-top:2rem;background:rgba(255,255,255,.08);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border:1px solid rgba(255,255,255,.18);border-radius:20px;padding:1.75rem;box-shadow:0 20px 50px rgba(0,0,0,.3)}
+.grafico h2{margin:0 0 1rem;font-size:1.3rem;background:linear-gradient(90deg,#facc15,#ff6ec7);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.grafico-info{color:#cbd5e1;font-size:.95rem;margin:0 0 1.25rem}
+.grafico-info strong{color:#4ade80}
+.grafico-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(135px,1fr));gap:.9rem}
+.combo-card{position:relative;display:flex;justify-content:center;gap:.3rem;padding:.75rem .5rem;background:rgba(255,255,255,.05);border:1px solid rgba(255,255,255,.12);border-radius:12px;transition:all .25s ease}
+.combo-card:hover{transform:translateY(-4px) scale(1.03);background:rgba(74,222,128,.12);border-color:rgba(74,222,128,.45);box-shadow:0 8px 22px rgba(74,222,128,.2)}
+.combo-letra{display:inline-flex;align-items:center;justify-content:center;width:32px;height:32px;background:linear-gradient(135deg,#4ade80,#22d3ee);color:#06251b;font-weight:800;border-radius:8px;font-family:'JetBrains Mono',monospace;font-size:1rem}
+.combo-num{position:absolute;top:-8px;right:-8px;min-width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;background:linear-gradient(135deg,#facc15,#ff6ec7);color:#1a1a2e;font-size:.7rem;font-weight:800;border-radius:50%;padding:0 4px;box-shadow:0 2px 8px rgba(0,0,0,.4)}
+</style>
+<script>
+    window.MathJax = {
+    tex: { inlineMath: [['\\(', '\\)']] },
+    svg: { fontCache: 'global' }
+};
+</script>
+<script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js" async></script>
+</head>
+<body>
+<main>
+    <header>
+        <h1>Calculadora</h1>
+        <p class="sub">Factoriales & Combinaciones</p>
+    </header>
+
+    <div class="tabs">
+        <button type="button" class="tab {% if modo != 'combinacion' %}active{% endif %}"
+                onclick="cambiarModo('factorial')">Factoriales</button>
+        <button type="button" class="tab {% if modo == 'combinacion' %}active{% endif %}"
+                onclick="cambiarModo('combinacion')">Combinaciones</button>
+    </div>
+
+    <form method="post" id="calc-form">
+    {% csrf_token %}
+    <input type="hidden" name="modo" id="modo-input" value="{{ modo|default:'factorial' }}">
+
+    <label>Expresión
+        <input type="text" name="expression" value="{{ expression }}"
+        id="expr-input"
+        placeholder="(k+1)!/(k+3)!" required autocomplete="off">
+    </label>
+    <label>Reemplazar valores <span style="opacity:.6;font-weight:400">(opcional)</span>
+        <input type="text" name="valores" value="{{ valores }}"
+        id="valores-input"
+        placeholder="k=2" autocomplete="off">
+    </label>
+
+    <div class="botones">
+        <button type="submit" class="btn-resolver">Resolver</button>
+        <button type="button" class="btn-limpiar" onclick="limpiar()">🗑️ Borrar</button>
+    </div>
+    </form>
+
+    <div class="ejemplos" id="ejemplos-factorial"
+        style="{% if modo == 'combinacion' %}display:none{% endif %}">
+    <strong>Ejemplos de factoriales:</strong>
+    <code onclick="setExpr('17!/(14!*3!)')">17!/(14!*3!)</code>
+    <code onclick="setExpr('n!/(n-2)!')">n!/(n-2)!</code>
+    <code onclick="setExpr('(k+1)!/(k+3)!')">(k+1)!/(k+3)!</code>
+    </div>
+
+    <div class="ejemplos" id="ejemplos-combinacion"
+        style="{% if modo != 'combinacion' %}display:none{% endif %}">
+    <strong>Ejemplos de combinaciones:</strong>
+    <code onclick="setExpr('C(5,2)','')">C(5,2)</code>
+    <code onclick="setExpr('C(6,3)','')">C(6,3)</code>
+    <code onclick="setExpr('C(10,3)','')">C(10,3)</code>
+    <code onclick="setExpr('C(n,r)','n=6, r=3')">C(n,r) con n=6, r=3</code>
+    </div>
+
+    {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+    {% if pasos %}
+    <section class="resultado">
+        {% for titulo, formula in pasos %}
+        <div class="paso">
+            <h3>Paso {{ forloop.counter }} · {{ titulo }}</h3>
+            <p>\( {{ formula }} \)</p>
+        </div>
+        {% endfor %}
+    </section>
+    {% endif %}
+
+    {% if grafico %}
+    <section class="grafico">
+        <h2>Esquema → C({{ grafico.n }}, {{ grafico.r }})</h2>
+        <p class="grafico-info">
+            Se escogen <strong>{{ grafico.r }}</strong> de
+            <strong>{{ grafico.n }}</strong> elementos ·
+            Total: <strong>{{ grafico.total }}</strong>
+        </p>
+
+        <div class="grafico-grid">
+            {% for combo in grafico.combinaciones %}
+            <div class="combo-card">
+                <span class="combo-num">{{ forloop.counter }}</span>
+                {% for letra in combo %}
+                <span class="combo-letra">{{ letra }}</span>
+                {% endfor %}
+            </div>
+            {% endfor %}
+        </div>
+    </section>
+    {% endif %}
+</main>
+
+<script>
+const MODO_CONFIG = {
+    factorial: {
+        placeholder: "(k+1)!/(k+3)!",
+        valoresPH: "k=2  o  n=10, k=3",
+    },
+    combinacion: {
+        placeholder: "C(n, r)  →  C(5, 2)",
+        valoresPH: "n=6, r=3",
+    },
+};
+
+function cambiarModo(modo) {
+    document.getElementById('modo-input').value = modo;
+
+    document.querySelectorAll('.tab').forEach(t => {
+        t.classList.toggle('active',
+            t.textContent.includes(modo === 'factorial' ? 'Factoriales' : 'Combinaciones'));
+    });
+
+    const cfg = MODO_CONFIG[modo];
+    document.getElementById('expr-input').placeholder = cfg.placeholder;
+    document.getElementById('valores-input').placeholder = cfg.valoresPH;
+
+    document.getElementById('ejemplos-factorial').style.display =
+        modo === 'factorial' ? '' : 'none';
+    document.getElementById('ejemplos-combinacion').style.display =
+        modo === 'combinacion' ? '' : 'none';
+
+    document.getElementById('expr-input').value = '';
+    document.getElementById('valores-input').value = '';
+
+    document.querySelectorAll('.resultado, .error, .grafico').forEach(el => el.remove());
+}
+
+function setExpr(expr, valores) {
+    document.getElementById('expr-input').value = expr;
+    document.getElementById('valores-input').value = valores || '';
+    document.getElementById('expr-input').focus();
+}
+
+function limpiar() {
+    document.getElementById('expr-input').value = '';
+    document.getElementById('valores-input').value = '';
+    document.getElementById('expr-input').focus();
+    document.querySelectorAll('.resultado, .error, .grafico').forEach(el => el.remove());
+    history.replaceState(null, '', window.location.pathname);
+}
+</script>
+</body>
+</html>
